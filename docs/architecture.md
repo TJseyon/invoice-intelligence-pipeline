@@ -44,19 +44,21 @@ flowchart TD
 
 ### 1. Tesseract (open-source OCR) instead of a cloud OCR API
 
-**Choice:** Tesseract + OpenCV preprocessing (denoise, adaptive threshold, deskew), run locally in the container.
+**Choice:** Tesseract + PIL/numpy preprocessing (grayscale, contrast stretch, a projection-profile deskew search), run locally in the container.
 
 **Why:** For an MVP/portfolio project processing typed or clean scanned invoices, Tesseract with basic preprocessing gets close to cloud-API accuracy at zero marginal cost and zero external dependency — which matters for a `docker compose up` demo that has to work from a clean clone without anyone provisioning cloud credentials. It also keeps document images fully local, which is a real consideration for financial documents.
 
 **Trade-off:** Cloud OCR (Textract, Google Document AI, Azure Form Recognizer) meaningfully outperforms Tesseract on messy phone-camera photos, handwriting, and low-quality scans, and several of them return layout/table structure that would remove the need for the LLM to reconstruct line items from flat text. The OCR module is isolated behind a single `run_ocr()` function specifically so swapping in a cloud provider later is a contained change, not a rewrite — that's the concrete reason `ocr.py` doesn't leak Tesseract-specific types into the rest of the pipeline.
 
+**A revision worth calling out:** preprocessing originally used OpenCV (`cv2.adaptiveThreshold` + `minAreaRect`-based deskew). It was rewritten to pure PIL + numpy specifically to fit Render's free-tier 512MB RAM cap for the public deployment (`opencv-python-headless` alone is a 60-90MB import with a heavy resident footprint). The replacement deskew is a small projection-profile search: rotate a downsampled thumbnail across a ±10° sweep and keep the angle whose row-sum profile has the highest variance (text lines snap into sharp bands at the correct angle). Tested against the bundled rotated sample documents before shipping, it matched or beat the OpenCV version's accuracy — a case where the constraint (fit in 512MB) didn't cost the thing it was constraining (OCR quality), but that was verified empirically, not assumed. A first attempt at cutting the dependency — using Tesseract's own orientation-detection (OSD) pass instead of a numpy search — was tried and rejected: OSD only detects large 90/180/270° rotations, not the small few-degree skew real scans actually have, and it measurably lost text on the rotated test set.
+
 ### 2. Postgres instead of SQLite for the deployed service
 
-**Choice:** SQLite is used for fast local dev/tests (`DATABASE_URL=sqlite:///...`, set automatically by `tests/conftest.py`); docker-compose runs Postgres for the actual service.
+**Choice:** SQLite is used for fast local dev/tests (`DATABASE_URL=sqlite:///...`, set automatically by `tests/conftest.py`) and for the free public Render deployment; `docker-compose.yml` runs Postgres for local full-stack development.
 
 **Why:** The review UI is a concurrent write path (multiple reviewers correcting documents) sitting next to the upload/extraction write path. SQLite serializes writes at the file level, which is fine for a single test process but becomes a real bottleneck the moment more than one person uses the review queue at once. Postgres also gives a straightforward upgrade path to a JSONB column for `extracted_json` (currently plain `TEXT` for SQLite-compatibility) if the schema needs to be queried directly later, e.g. "show me every document where `total_amount.confidence < 0.5`."
 
-**Trade-off:** Postgres is one more moving part in `docker-compose.yml` and one more thing that can fail to come up (mitigated here with a `healthcheck` + `depends_on: condition: service_healthy`). For a true single-user local demo, SQLite alone would have been simpler to set up.
+**Trade-off:** Postgres is one more moving part in `docker-compose.yml` and one more thing that can fail to come up (mitigated here with a `healthcheck` + `depends_on: condition: service_healthy`). For a true single-user local demo, SQLite alone would have been simpler to set up. The free Render deployment (`render.yaml`) deliberately uses SQLite rather than adding a Postgres service: Render's free Postgres expires after 30 days and free web services have no persistent disk anyway, so the data resets on every restart regardless of which database is used — adding Postgres there would trade simplicity for a durability guarantee the free tier can't actually deliver.
 
 ### 3. Synchronous request/response instead of a task queue
 

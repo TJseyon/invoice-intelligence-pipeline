@@ -68,9 +68,18 @@ Both are static, dependency-free HTML/CSS/JS — no build step, no framework
 By default the pipeline runs with `LLM_PROVIDER=mock` — a deterministic,
 regex-based stand-in for the LLM call (see `_mock_extract` in
 `backend/app/extraction.py`) so the **entire system runs offline, for free,
-out of the box**. To use real LLM extraction, copy `.env.example` to `.env`,
-set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY=...`, and re-run
-`docker compose up --build`.
+out of the box**. It only recognizes the exact label format of the bundled
+sample invoices — for real-world documents of your own, switch to a real
+provider: copy `.env.example` to `.env`, then either
+
+- `LLM_PROVIDER=gemini` + `GEMINI_API_KEY=...` — **free, no credit card**
+  (Google AI Studio: https://aistudio.google.com/apikey). This is what the
+  free public deployment below uses, so anyone using your deployed link
+  costs you nothing.
+- `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY=...` — paid, pay-as-you-go,
+  generally the strongest extraction quality.
+
+Then `docker compose up --build` to pick up the change.
 
 Try it immediately: generate sample invoices and upload one through
 http://localhost:8000/docs (`POST /documents/upload`):
@@ -78,6 +87,72 @@ http://localhost:8000/docs (`POST /documents/upload`):
 ```bash
 python3 scripts/generate_sample_data.py --out backend/eval/data --count 30
 ```
+
+## Deploy for free (one click)
+
+This gets you a public URL anyone — friends, recruiters — can open and use,
+at zero ongoing cost to you.
+
+1. **Get a free Gemini API key:** https://aistudio.google.com/apikey (no
+   credit card).
+2. **Push this repo to your own GitHub** (see "Keeping this updated" below
+   if you haven't done this yet).
+3. **Deploy it:** in the [Render Dashboard](https://dashboard.render.com/),
+   click **New +** → **Blueprint**, connect your GitHub repo, and Render
+   reads `render.yaml` at the repo root and provisions everything
+   automatically. When prompted, paste in your Gemini API key (it's marked
+   `sync: false` in the blueprint, so it's never committed to your repo).
+4. Render gives you a URL like `https://invoice-intelligence-pipeline.onrender.com`
+   — that's the link to share.
+
+**What "free" actually means here** (so nothing surprises you):
+- Render's free web service is capped at **512MB RAM** — this is exactly
+  why OCR preprocessing was rewritten to drop OpenCV in favor of a lighter
+  PIL + numpy implementation (see `docs/architecture.md`); the app is sized
+  to fit.
+- It **sleeps after 15 minutes with no traffic** and takes ~30-60 seconds to
+  wake back up on the next visit — the first person to open your link after
+  a quiet period will see a slow load, not a broken app.
+- There's **no persistent disk** on the free tier, so uploaded documents and
+  the SQLite database reset whenever the service restarts (which happens on
+  every sleep/wake cycle and every deploy). For a portfolio demo this is a
+  feature, not a bug — every visitor sees a clean app — but it means don't
+  rely on it to keep data around. If you later want persistence, add a
+  Render Postgres instance (free for 30 days, or paid after) and set
+  `DATABASE_URL` in the Render dashboard.
+- Gemini's free tier is generous (roughly 1,000+ requests/day on the Flash
+  model as of this writing) but not literally unlimited — fine for a demo
+  that gets occasional recruiter traffic, not for production load. Google's
+  free tier can also use your prompts to improve their models; don't upload
+  real sensitive documents to a public demo running on the free tier.
+
+## Keeping this updated
+
+You don't need to re-download a zip for every change. This project is
+already a git repository (`git log` to see it) — set it up once, and from
+then on an update is one command:
+
+```bash
+# one-time setup: create an empty repo on GitHub first (no README/license),
+# then from inside the project folder:
+git remote add origin https://github.com/<you>/invoice-intelligence-pipeline.git
+git branch -M main
+git push -u origin main
+```
+
+Connect that GitHub repo to Render via the Blueprint flow above once, and
+Render **auto-deploys on every push** to your default branch. From then on,
+whenever you (or I) change a file:
+
+```bash
+git add -A
+git commit -m "describe what changed"
+git push
+```
+
+— that single `git push` updates both your local Docker setup (next
+`docker compose up --build`) and your live Render deployment (automatically,
+within a minute or two). No re-downloading, no manual file copying.
 
 ## Project layout
 
@@ -87,8 +162,8 @@ backend/
     config.py        # every threshold/setting, sourced from env vars
     models.py         # strict Pydantic schema (ExtractedField w/ confidence + source_text)
     db.py              # SQLAlchemy models: documents, corrections
-    ocr.py              # Tesseract + OpenCV preprocessing, language detection
-    extraction.py        # LLM call, JSON-schema validation, hallucination check
+    ocr.py              # Tesseract + PIL/numpy preprocessing, language detection
+    extraction.py        # LLM call (Anthropic/Gemini/mock), JSON-schema validation, hallucination check
     validation.py         # cross-field rules, review-flagging logic
     pipeline.py            # orchestrates OCR -> extraction -> validation
     routes/                # FastAPI routers (documents, eval)
@@ -108,6 +183,7 @@ backend/
 scripts/
   generate_sample_data.py  # synthetic invoices + ground truth (no network needed)
 docs/architecture.md        # diagram + reasoned design decisions
+render.yaml                  # one-click free deployment blueprint (see "Deploy for free")
 ```
 
 ## Handling edge cases (not just the happy path)
@@ -217,27 +293,41 @@ mentioning in an interview. Run `make eval-baseline` after your first
 
 Being upfront about testing depth, since "no errors, working" was the ask:
 
-- **Verified live, in a sandbox with Tesseract/OpenCV/Pillow but no network:**
-  OCR + preprocessing (denoise/threshold/deskew) against real generated
-  sample invoices — clean invoices OCR near-perfectly, blank pages produce
-  0 characters, rotated + low-contrast images still OCR well after
-  deskewing, French text extracts cleanly for the language-mismatch path.
-  Also ran a standalone reimplementation of the scoring logic across all
-  28 generated documents end-to-end (see "Running the eval" above for the
-  actual numbers this produced). This process caught and fixed **two real
-  regex bugs** in the mock extractor (invoice_number matching the word
-  "VENDOR"; TOTAL matching inside LINETOTAL/SUBTOTAL) and **one real logic
-  bug** in validation (line items were being compared against the
-  tax-inclusive total instead of the pre-tax subtotal, which would have
-  false-flagged every invoice with tax).
-- **Verified by static analysis:** every Python file parses cleanly
-  (`ast.parse`); imports, route paths, and Pydantic/SQLAlchemy model shapes
-  were manually traced for consistency.
-- **Not yet run end-to-end:** the full FastAPI + Postgres stack via Docker,
-  since this environment couldn't install `fastapi`/`pydantic`/`sqlalchemy`
-  or reach a package index. Run `docker compose up --build` followed by
-  `pytest -v` (30 tests) as your first step — if anything fails, it's a
-  fast, well-isolated fix from here rather than a rewrite.
+- **Confirmed running end-to-end via `docker compose up --build`**, real
+  uploads through the `/` UI, and `docker compose exec backend pytest -v`
+  — not just built in a sandbox and handed over untested.
+- **Verified live, in a sandbox with Tesseract/Pillow/numpy but no network
+  access to install `fastapi`/`pydantic`/`sqlalchemy`:** OCR + preprocessing
+  against real generated sample invoices — clean invoices OCR
+  near-perfectly, blank pages produce 0 characters, rotated + low-contrast
+  images still OCR well after deskewing, French text extracts cleanly for
+  the language-mismatch path. When preprocessing was rewritten to drop
+  OpenCV (see `docs/architecture.md` decision #1), the new deskew was
+  re-tested against the same rotated samples before shipping — a first
+  attempt (using Tesseract's OSD pass) measurably lost text and was
+  rejected; the numpy projection-profile version that replaced it matched
+  or beat the original OpenCV accuracy. Also ran a standalone
+  reimplementation of the scoring logic across all 28 generated documents
+  end-to-end (see "Running the eval" above). This process, across two
+  rounds, caught and fixed **two regex bugs** in the mock extractor, **one
+  accounting bug** in validation (line items were compared against the
+  tax-inclusive total instead of the pre-tax subtotal), and **one grammar
+  bug** in the frontend's plain-English error copy.
+- **The Gemini integration is syntax-verified but not live-tested against
+  the real API** — this sandbox has no network access to call it. The code
+  mirrors the already-tested Anthropic call path closely (same retry logic,
+  same JSON-schema validation, same hallucination check downstream), and
+  the request shape matches Google's current documented SDK usage, but the
+  very first real request is happening on your machine, not mine. If it
+  errors, check the exact model name against
+  https://aistudio.google.com/ first — model availability shifts often.
+- **`render.yaml` is schema-validated** (parses correctly, keys match
+  Render's current documented Blueprint spec) but the actual Render
+  deployment — Blueprint parsing, secret-key prompt, free-tier RAM
+  behavior under real load — has not been run, since that requires an
+  account I don't have access to. Follow "Deploy for free" as your first
+  attempt; if the build fails, Render's deploy logs will point at the
+  specific step, and that's a fast, isolated fix from here.
 
 ## Resume bullet
 
