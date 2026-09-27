@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: invoice_app
+      POSTGRES_PASSWORD: invoice_app
+      POSTGRES_DB: invoice_pipeline
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoice_app -d invoice_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://invoice_app:invoice_app@db:5432/invoice_pipeline
+      ENVIRONMENT: production
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng}
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploaded_documents:/app/uploaded_documents
+      - ./backend/eval/data:/app/eval/data
+      - ./backend/eval/results:/app/eval/results
+
+volumes:
+  pgdata:
+  uploaded_documents:

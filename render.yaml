@@ -1,0 +1,37 @@
+# Render Blueprint: lets anyone with this repo connected to Render deploy
+# the whole app with one click ("New +" -> "Blueprint" in the Render
+# dashboard, or the deploy button in README.md), instead of clicking
+# through the manual service-creation form field by field.
+#
+# Deliberately ONE service, no database service:
+#   - DATABASE_URL is left unset here, so app/config.py's default
+#     (sqlite:///./invoice_pipeline.db) is used. Render's free web services
+#     have no persistent disk, so this file resets whenever the service
+#     restarts (e.g. after the 15-minute idle spin-down) -- fine, even
+#     desirable, for a public demo: everyone always sees a clean app.
+#     See README "Deploy for free" for the tradeoff and how to add a real
+#     Postgres service later if you outgrow it.
+#   - LLM_PROVIDER=gemini, not anthropic: Google's AI Studio free tier
+#     needs no credit card, so a demo can run indefinitely at zero cost.
+#     GEMINI_API_KEY is `sync: false`, meaning Render prompts for it
+#     during the Blueprint deploy instead of it ever being committed here.
+
+services:
+  - type: web
+    name: invoice-intelligence-pipeline
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: OCR_LANGUAGES
+        value: eng

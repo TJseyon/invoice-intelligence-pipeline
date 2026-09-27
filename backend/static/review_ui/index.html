@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Invoice Review Queue</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a; --text: #e6e8eb;
+    --muted: #8a90a0; --accent: #5b8def; --warn: #e0a33e; --err: #e05b5b; --ok: #4caf7d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); display: flex;
+           align-items: center; justify-content: space-between; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 73px); }
+  .queue { border-right: 1px solid var(--border); overflow-y: auto; padding: 12px; }
+  .queue-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px;
+                border: 1px solid transparent; }
+  .queue-item:hover { background: var(--panel); }
+  .queue-item.active { background: var(--panel); border-color: var(--accent); }
+  .queue-item .fn { font-size: 13px; font-weight: 600; }
+  .queue-item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
+  .badge.flagged { background: rgba(224,91,91,0.15); color: var(--err); }
+  .badge.ok { background: rgba(76,175,125,0.15); color: var(--ok); }
+  .detail { padding: 28px; overflow-y: auto; }
+  .empty-state { color: var(--muted); text-align: center; margin-top: 100px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+           padding: 18px; margin-bottom: 16px; }
+  .panel h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
+              color: var(--muted); }
+  .issue { padding: 8px 10px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+  .issue.error { background: rgba(224,91,91,0.1); border-left: 3px solid var(--err); }
+  .issue.warning { background: rgba(224,163,62,0.1); border-left: 3px solid var(--warn); }
+  .field-row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 10px; align-items: center;
+               padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .field-row label { color: var(--muted); font-size: 13px; }
+  .field-row input { background: #0f1115; border: 1px solid var(--border); color: var(--text);
+                      padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  .conf { font-size: 12px; text-align: right; }
+  .conf.low { color: var(--err); } .conf.mid { color: var(--warn); } .conf.high { color: var(--ok); }
+  button.primary { background: var(--accent); color: white; border: none; padding: 10px 18px;
+                    border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; }
+  button.primary:hover { opacity: 0.9; }
+  .raw-text { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+              font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted);
+              white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+  .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Invoice Review Queue</h1>
+    <div class="sub">Human-in-the-loop review for flagged extractions</div>
+  </div>
+  <div class="sub" id="stats-line">loading stats…</div>
+</header>
+<div class="layout">
+  <div class="queue">
+    <div class="toolbar">
+      <label><input type="checkbox" id="flaggedOnly" checked /> Flagged only</label>
+    </div>
+    <div id="queue-list"></div>
+  </div>
+  <div class="detail" id="detail-panel">
+    <div class="empty-state">Select a document from the queue to review it.</div>
+  </div>
+</div>
+
+<script>
+const API_BASE = ""; // same origin
+let currentDoc = null;
+
+async function loadQueue() {
+  const flaggedOnly = document.getElementById("flaggedOnly").checked;
+  const res = await fetch(`${API_BASE}/documents?flagged_only=${flaggedOnly}&limit=100`);
+  const docs = await res.json();
+  const list = document.getElementById("queue-list");
+  list.innerHTML = "";
+  if (docs.length === 0) {
+    list.innerHTML = '<div class="empty-state" style="margin-top:40px;">Nothing here.</div>';
+  }
+  docs.forEach(doc => {
+    const el = document.createElement("div");
+    el.className = "queue-item";
+    el.onclick = () => selectDoc(doc.id, el);
+    el.innerHTML = `
+      <div class="fn">${doc.filename}</div>
+      <div class="meta">${doc.vendor_name || "—"} · ${doc.total_amount != null ? "$" + doc.total_amount.toFixed(2) : "—"}</div>
+      <span class="badge ${doc.flagged_for_review ? "flagged" : "ok"}">${doc.status}</span>
+    `;
+    list.appendChild(el);
+  });
+
+  const statsRes = await fetch(`${API_BASE}/documents/stats/corrections`);
+  const stats = await statsRes.json();
+  document.getElementById("stats-line").textContent =
+    `${stats.total_documents} documents · ${stats.total_corrections} corrections logged`;
+}
+
+async function selectDoc(id, el) {
+  document.querySelectorAll(".queue-item").forEach(n => n.classList.remove("active"));
+  if (el) el.classList.add("active");
+
+  const res = await fetch(`${API_BASE}/documents/${id}`);
+  const doc = await res.json();
+  currentDoc = doc;
+  renderDetail(doc);
+}
+
+function confClass(c) {
+  if (c >= 0.85) return "high";
+  if (c >= 0.6) return "mid";
+  return "low";
+}
+
+function renderDetail(doc) {
+  const panel = document.getElementById("detail-panel");
+  const issuesHtml = (doc.issues || []).map(i =>
+    `<div class="issue ${i.severity}"><strong>${i.code}</strong> ${i.field ? "(" + i.field + ")" : ""} — ${i.message}</div>`
+  ).join("") || '<div style="color:var(--muted);font-size:13px;">No issues.</div>';
+
+  let fieldsHtml = '<div style="color:var(--muted);font-size:13px;">No structured extraction (status: ' + doc.status + ').</div>';
+  if (doc.extracted) {
+    const fields = ["vendor_name", "invoice_number", "invoice_date", "currency",
+                     "subtotal_amount", "tax_amount", "total_amount"];
+    fieldsHtml = fields.map(f => {
+      const fv = doc.extracted[f] || { value: null, confidence: 0 };
+      return `
+        <div class="field-row">
+          <label>${f}</label>
+          <input type="text" data-field="${f}" value="${fv.value ?? ""}" />
+          <span class="conf ${confClass(fv.confidence)}">${(fv.confidence * 100).toFixed(0)}%</span>
+        </div>`;
+    }).join("");
+  }
+
+  panel.innerHTML = `
+    <div class="panel">
+      <h3>Document</h3>
+      <div style="font-size:14px;">${doc.filename}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+        status: ${doc.status} · OCR confidence: ${doc.ocr_confidence != null ? doc.ocr_confidence.toFixed(1) + "%" : "—"}
+        · language: ${doc.detected_language || "—"}
+      </div>
+      ${doc.has_source_file ? `<img src="${API_BASE}/documents/${doc.id}/file" alt="source document"
+            style="max-width:100%;border-radius:8px;margin-top:12px;border:1px solid var(--border);" />` : ""}
+    </div>
+    <div class="panel">
+      <h3>Validation Issues</h3>
+      ${issuesHtml}
+    </div>
+    <div class="panel">
+      <h3>Extracted Fields (editable)</h3>
+      ${fieldsHtml}
+      <div style="margin-top:14px;">
+        <button class="primary" id="save-btn">Save Corrections</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Raw OCR Text</h3>
+      <div class="raw-text">${(doc.raw_ocr_text || "(none)").replace(/</g, "&lt;")}</div>
+    </div>
+  `;
+
+  const saveBtn = document.getElementById("save-btn");
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const inputs = panel.querySelectorAll("input[data-field]");
+      const corrected_fields = {};
+      inputs.forEach(inp => { corrected_fields[inp.dataset.field] = inp.value; });
+
+      await fetch(`${API_BASE}/documents/${doc.id}/corrections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ corrected_fields, reviewer_note: "reviewed via UI" }),
+      });
+      await loadQueue();
+      panel.innerHTML = '<div class="empty-state">Saved. Select another document.</div>';
+    };
+  }
+}
+
+document.getElementById("flaggedOnly").addEventListener("change", loadQueue);
+loadQueue();
+setInterval(loadQueue, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+filename,category,vendor_name,invoice_number,invoice_date,currency,subtotal_amount,tax_amount,total_amount,expected_status,notes
+normal_001.png,normal,Blue Ridge Hardware,INV-1409,2026-05-08,USD,758.0,60.64,818.64,ok_or_flagged,
+normal_002.png,normal,Meridian Print Shop,INV-7912,2026-01-01,USD,90.0,7.2,97.2,ok_or_flagged,
+normal_003.png,normal,Harbor Freight & Parts,INV-1434,2026-09-07,USD,543.6,43.49,587.09,ok_or_flagged,
+normal_004.png,normal,Cascade Office Supplies,INV-3547,2026-04-25,USD,242.6,19.41,262.01,ok_or_flagged,
+normal_005.png,normal,Meridian Print Shop,INV-5333,2026-01-24,USD,150.5,12.04,162.54,ok_or_flagged,
+normal_006.png,normal,Meridian Print Shop,INV-4150,2026-02-02,USD,53.5,4.28,57.78,ok_or_flagged,
+normal_007.png,normal,Riverside Consulting,INV-5554,2026-08-21,USD,584.57,46.77,631.34,ok_or_flagged,
+normal_008.png,normal,Meridian Print Shop,INV-3803,2026-09-24,USD,1197.0,95.76,1292.76,ok_or_flagged,
+normal_009.png,normal,Harbor Freight & Parts,INV-4598,2026-06-27,USD,45.0,3.6,48.6,ok_or_flagged,
+normal_010.png,normal,Ironclad Manufacturing,INV-7572,2026-05-03,USD,509.96,40.8,550.76,ok_or_flagged,
+normal_011.png,normal,Riverside Consulting,INV-8517,2026-03-09,USD,268.8,21.5,290.3,ok_or_flagged,
+normal_012.png,normal,Meridian Print Shop,INV-8019,2026-07-12,USD,614.6,49.17,663.77,ok_or_flagged,
+normal_013.png,normal,Acme Supply Co,INV-2796,2026-03-21,USD,44.8,3.58,48.38,ok_or_flagged,
+normal_014.png,normal,Meridian Print Shop,INV-8668,2026-09-09,USD,40.0,3.2,43.2,ok_or_flagged,
+normal_015.png,normal,Cascade Office Supplies,INV-6573,2026-02-10,USD,1919.95,153.6,2073.55,ok_or_flagged,
+normal_016.png,normal,Blue Ridge Hardware,INV-5889,2026-09-20,USD,749.95,60.0,809.95,ok_or_flagged,
+normal_017.png,normal,Harbor Freight & Parts,INV-1009,2026-06-16,USD,24.0,1.92,25.92,ok_or_flagged,
+normal_018.png,normal,Cascade Office Supplies,INV-4923,2026-01-08,USD,32.0,2.56,34.56,ok_or_flagged,
+normal_019.png,normal,Blue Ridge Hardware,INV-9727,2026-03-05,USD,1713.5,137.08,1850.58,ok_or_flagged,
+blank_020.png,blank,,,,,,,,empty_document,intentionally blank page
+blank_021.png,blank,,,,,,,,empty_document,intentionally blank page
+french_022.png,non_english,Établissements Dubois,FR-2291,2026-03-14,EUR,,,210.4,unsupported_language,French text; default OCR config is English-only
+french_023.png,non_english,Établissements Dubois,FR-2291,2026-03-14,EUR,,,210.4,unsupported_language,French text; default OCR config is English-only
+noisy_024.png,noisy,Summit Logistics,INV-6107,2026-07-22,USD,1245.95,99.68,1345.63,flagged_or_failed,rotated + low contrast: OCR confidence should be lower
+noisy_025.png,noisy,Summit Logistics,INV-4681,2026-02-11,USD,98.0,7.84,105.84,flagged_or_failed,rotated + low contrast: OCR confidence should be lower
+noisy_026.png,noisy,Acme Supply Co,INV-2163,2026-01-08,USD,36.5,2.92,39.42,flagged_or_failed,rotated + low contrast: OCR confidence should be lower
+noisy_027.png,noisy,Cascade Office Supplies,INV-8953,2026-04-18,USD,1096.0,87.68,1183.68,flagged_or_failed,rotated + low contrast: OCR confidence should be lower
+noisy_028.png,noisy,Summit Logistics,INV-2545,2026-02-22,USD,372.76,29.82,402.58,flagged_or_failed,rotated + low contrast: OCR confidence should be lower

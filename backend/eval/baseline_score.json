@@ -1,0 +1,13 @@
+{
+  "_comment": "This is a placeholder. Real numbers are only ever written by `python -m eval.run_eval --save-baseline`, never hand-edited. See README.md 'Running the eval' section. test_eval.py skips the regression check (rather than fabricating a pass) until this file has been populated by an actual run.",
+  "run_at": null,
+  "documents_evaluated": null,
+  "field_level_accuracy": null,
+  "field_pairs_scored": null,
+  "status_detection_accuracy": null,
+  "status_cases_scored": null,
+  "flag_catch_rate": null,
+  "bad_extractions_total": null,
+  "flag_false_positive_rate": null,
+  "good_extractions_total": null
+}

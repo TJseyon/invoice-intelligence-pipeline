@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.db
+.env
+.venv/
+venv/
+
+backend/uploaded_documents/
+backend/eval/results/*.csv
+backend/eval/results/*.json
+!backend/eval/results/.gitkeep
+
+.DS_Store
+*.egg-info/
