@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     llm_model: str = "claude-sonnet-5"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     llm_max_retries: int = 2
     llm_field_confidence_threshold: float = 0.75  # per-field LLM self-reported confidence
     llm_temperature: float = 0.0

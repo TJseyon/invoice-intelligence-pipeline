@@ -179,6 +179,7 @@ def _call_gemini(ocr_text: str, retry_note: str | None = None) -> str:
     than parsing markdown fences out of a text reply, which Gemini supports
     natively for structured output."""
     from google import genai
+    from google.genai import errors as genai_errors
     from google.genai import types
 
     if not settings.gemini_api_key:
@@ -189,15 +190,21 @@ def _call_gemini(ocr_text: str, retry_note: str | None = None) -> str:
     if retry_note:
         user_content += f"\n\nYour previous response was invalid: {retry_note}\nReturn corrected JSON only."
 
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=user_content,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            temperature=settings.llm_temperature,
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=settings.llm_temperature,
+            ),
+        )
+    except genai_errors.APIError as exc:
+        # e.g. 404 model retired, 401/403 bad key, 429 quota. Fail fast with a
+        # readable message instead of an opaque 500 (and don't burn retries on it).
+        logger.error("Gemini API error (model=%s): %s", settings.gemini_model, exc)
+        raise ExtractionError(f"Gemini API error (model={settings.gemini_model}): {exc}") from exc
     return response.text or ""
 
 
