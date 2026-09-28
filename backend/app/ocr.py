@@ -57,7 +57,9 @@ def _load_image(file_bytes: bytes, content_type: str) -> Image.Image:
         # Local import: pdf2image needs poppler installed (handled in Dockerfile).
         from pdf2image import convert_from_bytes
 
-        pages = convert_from_bytes(file_bytes, dpi=300)
+        # 200 dpi is plenty for typical invoices and ~2x cheaper than 300 on the
+        # tiny CPU/RAM of a free-tier host.
+        pages = convert_from_bytes(file_bytes, dpi=200)
         if not pages:
             raise OCRError("PDF contained no pages.")
         return pages[0].convert("RGB")  # MVP: first page only

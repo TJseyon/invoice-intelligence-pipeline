@@ -24,6 +24,9 @@ COPY . .
 
 RUN mkdir -p uploaded_documents eval/results
 
+# Tesseract's OpenMP threads thrash on a tiny shared CPU; one thread is faster there.
+ENV OMP_THREAD_LIMIT=1
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \

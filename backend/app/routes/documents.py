@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -63,7 +64,10 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
 
     # --- run pipeline --------------------------------------------------
     try:
-        result = process_document(file_bytes, file.content_type)
+        # Run in a worker thread: OCR + the LLM call take many seconds, and calling
+        # them directly inside this async route would freeze the whole server
+        # (including /health), making Render kill and restart the instance.
+        result = await run_in_threadpool(process_document, file_bytes, file.content_type)
     except OCRError as exc:
         raise HTTPException(status_code=422, detail=f"Could not process file: {exc}") from exc
 
