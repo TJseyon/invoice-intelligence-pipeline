@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from difflib import SequenceMatcher
 
 from pydantic import ValidationError
@@ -190,22 +191,38 @@ def _call_gemini(ocr_text: str, retry_note: str | None = None) -> str:
     if retry_note:
         user_content += f"\n\nYour previous response was invalid: {retry_note}\nReturn corrected JSON only."
 
-    try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=user_content,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                temperature=settings.llm_temperature,
-            ),
-        )
-    except genai_errors.APIError as exc:
-        # e.g. 404 model retired, 401/403 bad key, 429 quota. Fail fast with a
-        # readable message instead of an opaque 500 (and don't burn retries on it).
-        logger.error("Gemini API error (model=%s): %s", settings.gemini_model, exc)
-        raise ExtractionError(f"Gemini API error (model={settings.gemini_model}): {exc}") from exc
-    return response.text or ""
+    # Temporary Google-side conditions (503 "high demand", 429 rate limit, 500/504)
+    # are retried with a short backoff. Anything else (404 model retired, 401/403
+    # bad key, 400 bad request) can't succeed on retry, so it fails fast with a
+    # readable message instead of an opaque 500.
+    transient_codes = {429, 500, 503, 504}
+    backoff_seconds = [2, 5, 10]
+    response = None
+    for attempt in range(len(backoff_seconds) + 1):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=user_content,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    temperature=settings.llm_temperature,
+                ),
+            )
+            break
+        except genai_errors.APIError as exc:
+            code = getattr(exc, "code", None)
+            if code in transient_codes and attempt < len(backoff_seconds):
+                wait = backoff_seconds[attempt]
+                logger.warning(
+                    "Gemini temporary error %s (model=%s); retrying in %ss (retry %d/%d)",
+                    code, settings.gemini_model, wait, attempt + 1, len(backoff_seconds),
+                )
+                time.sleep(wait)
+                continue
+            logger.error("Gemini API error (model=%s): %s", settings.gemini_model, exc)
+            raise ExtractionError(f"Gemini API error (model={settings.gemini_model}): {exc}") from exc
+    return (response.text if response is not None else "") or ""
 
 
 def extract_fields(ocr_text: str) -> tuple[ExtractedInvoice, list[str]]:
